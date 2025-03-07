@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ExamPrep Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .neu-shadow {
+            box-shadow: 8px 8px 16px #c5c5c5,
+                       -8px -8px 16px #ffffff;
+        }
+        .neu-pressed {
+            box-shadow: inset 5px 5px 10px #c5c5c5,
+                       inset -5px -5px 10px #ffffff;
+        }
+        .neu-button:active {
+            box-shadow: inset 3px 3px 6px #c5c5c5,
+                       inset -3px -3px 6px #ffffff;
+        }
+        body {
+            background-color: #e0e5ec;
+        }
+        .loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <!-- Loading Spinner -->
+    <div class="loading">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-500"></div>
+    </div>
+
+    <!-- Auth Section -->
+    <div id="authSection" class="max-w-md mx-auto neu-shadow rounded-xl p-6 mb-8">
+        <h2 class="text-2xl font-bold mb-4 text-gray-700">ExamPrep Tracker</h2>
+        <div class="space-y-4">
+            <button onclick="handleGoogleSignIn()" class="w-full p-3 rounded-lg neu-button bg-white text-gray-700 flex items-center justify-center gap-2">
+                <i class="bi bi-google"></i>
+                Sign in with Google
+            </button>
+            <div class="relative">
+                <input type="email" id="email" placeholder="Email" class="w-full p-3 rounded-lg neu-pressed bg-transparent">
+            </div>
+            <div class="relative">
+                <input type="password" id="password" placeholder="Password" class="w-full p-3 rounded-lg neu-pressed bg-transparent">
+            </div>
+            <button onclick="handleEmailSignIn()" class="w-full p-3 rounded-lg neu-button bg-white text-gray-700">
+                Sign In
+            </button>
+            <button onclick="toggleAuthMode()" id="authToggle" class="w-full text-blue-600">
+                Create new account
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="hidden max-w-6xl mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Timer Section -->
+            <div class="neu-shadow rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4 text-gray-700">Study Timer</h3>
+                <div class="text-center">
+                    <div id="timer" class="text-4xl font-bold text-gray-700 mb-4">25:00</div>
+                    <div class="flex gap-4 justify-center">
+                        <button onclick="startTimer()" class="p-3 rounded-lg neu-button">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                        <button onclick="pauseTimer()" class="p-3 rounded-lg neu-button">
+                            <i class="bi bi-pause-fill"></i>
+                        </button>
+                        <button onclick="resetTimer()" class="p-3 rounded-lg neu-button">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                    </div>
+                    <select id="timerMode" class="mt-4 p-2 rounded-lg neu-pressed bg-transparent" onchange="updateTimerMode()">
+                        <option value="pomodoro">Pomodoro (25min)</option>
+                        <option value="short">Short Break (5min)</option>
+                        <option value="long">Long Break (15min)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Subject Tracker -->
+            <div class="neu-shadow rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4 text-gray-700">Subjects</h3>
+                <div class="space-y-4">
+                    <div class="flex gap-2">
+                        <input type="text" id="newSubject" placeholder="Add subject" class="flex-1 p-2 rounded-lg neu-pressed bg-transparent">
+                        <button onclick="addSubject()" class="p-2 rounded-lg neu-button">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                    <div id="subjectList" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <!-- Analytics -->
+            <div class="neu-shadow rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4 text-gray-700">Analytics</h3>
+                <canvas id="studyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Mock Test Section -->
+        <div class="mt-6 neu-shadow rounded-xl p-6">
+            <h3 class="text-xl font-bold mb-4 text-gray-700">Mock Tests</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button onclick="startMockTest()" class="p-4 rounded-lg neu-button">
+                    Start New Mock Test
+                </button>
+                <div id="mockTestStats" class="p-4 rounded-lg neu-pressed">
+                    <p>Previous Score: <span id="lastScore">N/A</span></p>
+                    <p>Average Score: <span id="avgScore">N/A</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isSignUp = false;
+        let timer = null;
+        let timeLeft = 1500; // 25 minutes in seconds
+        let isRunning = false;
+        let currentUser = null;
+        let subjects = [];
+        let studyLogs = [];
+
+        // Toggle between sign in and sign up
+        function toggleAuthMode() {
+            isSignUp = !isSignUp;
+            document.getElementById('authToggle').textContent = isSignUp ? 'Already have an account' : 'Create new account';
+        }
+
+        // Mock authentication functions
+        async function handleEmailSignIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            showLoading();
+            
+            try {
+                // Here you would normally make an API call
+                await simulateApiCall();
+                currentUser = { email };
+                showDashboard();
+                initializeChart();
+                loadUserData();
+            } catch (error) {
+                alert('Authentication failed');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function handleGoogleSignIn() {
+            // Implement Google Sign In
+            alert('Google Sign In would be implemented here');
+        }
+
+        // Timer functions
+        function updateTimer() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            document.getElementById('timer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function startTimer() {
+            if (!isRunning) {
+                isRunning = true;
+                timer = setInterval(() => {
+                    if (timeLeft > 0) {
+                        timeLeft--;
+                        updateTimer();
+                    } else {
+                        notify('Study session completed!');
+                        resetTimer();
+                    }
+                }, 1000);
+            }
+        }
+
+        function pauseTimer() {
+            clearInterval(timer);
+            isRunning = false;
+        }
+
+        function resetTimer() {
+            clearInterval(timer);
+            isRunning = false;
+            timeLeft = 1500;
+            updateTimer();
+        }
+
+        function updateTimerMode() {
+            const mode = document.getElementById('timerMode').value;
+            switch (mode) {
+                case 'pomodoro':
+                    timeLeft = 1500;
+                    break;
+                case 'short':
+                    timeLeft = 300;
+                    break;
+                case 'long':
+                    timeLeft = 900;
+                    break;
+                case 'custom':
+                    const custom = prompt('Enter minutes:', '25');
+                    if (custom) timeLeft = parseInt(custom) * 60;
+                    break;
+            }
+            updateTimer();
+        }
+
+        // Subject management
+        function addSubject() {
+            const input = document.getElementById('newSubject');
+            const subject = input.value.trim();
+            if (subject) {
+                subjects.push({ name: subject, mastered: false });
+                input.value = '';
+                updateSubjectList();
+                saveUserData();
+            }
+        }
+
+        function updateSubjectList() {
+            const list = document.getElementById('subjectList');
+            list.innerHTML = '';
+            subjects.forEach((subject, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2 rounded-lg neu-pressed';
+                div.innerHTML = `
+                    <span>${subject.name}</span>
+                    <div class="flex gap-2">
+                        <button onclick="toggleMastery(${index})" class="p-1 rounded-lg neu-button ${subject.mastered ? 'text-green-500' : 'text-gray-500'}">
+                            <i class="bi bi-check-circle${subject.mastered ? '-fill' : ''}"></i>
+                        </button>
+                        <button onclick="removeSubject(${index})" class="p-1 rounded-lg neu-button text-red-500">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function toggleMastery(index) {
+            subjects[index].mastered = !subjects[index].mastered;
+            updateSubjectList();
+            saveUserData();
+        }
+
+        function removeSubject(index) {
+            subjects.splice(index, 1);
+            updateSubjectList();
+            saveUserData();
+        }
+
+        // Analytics
+        function initializeChart() {
+            const ctx = document.getElementById('studyChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Study Hours',
+                        data: [4, 3, 5, 2, 6, 4, 3],
+                        backgroundColor: '#4B5563'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Mock Test
+        function startMockTest() {
+            alert('Mock test feature would be implemented here');
+        }
+
+        // Utility functions
+        function showLoading() {
+            document.querySelector('.loading').style.display = 'block';
+        }
+
+        function hideLoading() {
+            document.querySelector('.loading').style.display = 'none';
+        }
+
+        function showDashboard() {
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+
+        function notify(message) {
+            if ('Notification' in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification('ExamPrep Tracker', { body: message });
+                    }
+                });
+            }
+        }
+
+        // Data persistence
+        async function saveUserData() {
+            showLoading();
+            try {
+                await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer bEFgtFZQ1LV7IdeSeTaAKHXRWYo1',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: 'exam-prep-tracker-001',
+                        action: 'update',
+                        collection: 'user_data',
+                        conditions: { email: currentUser.email },
+                        data: {
+                            subjects,
+                            studyLogs
+                        }
+                    })
+                });
+            } catch (error) {
+                console.error('Failed to save data:', error);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadUserData() {
+            showLoading();
+            try {
+                const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer bEFgtFZQ1LV7IdeSeTaAKHXRWYo1',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: 'exam-prep-tracker-001',
+                        action: 'read',
+                        collection: 'user_data',
+                        conditions: { email: currentUser.email }
+                    })
+                });
+                const data = await response.json();
+                if (data.success && data.result.length > 0) {
+                    subjects = data.result[0].subjects || [];
+                    studyLogs = data.result[0].studyLogs || [];
+                    updateSubjectList();
+                }
+            } catch (error) {
+                console.error('Failed to load data:', error);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function simulateApiCall() {
+            return new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // Initialize
+        updateTimer();
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
